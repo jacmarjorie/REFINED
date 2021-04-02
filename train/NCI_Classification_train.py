@@ -16,6 +16,7 @@ from sklearn.metrics import classification_report
 from sklearn import metrics
 from sklearn.metrics import roc_auc_score
 import pickle
+import math
 ##########################################
 #                                        #                                              
 #                                        #                               
@@ -31,11 +32,11 @@ Results_Dic = {}
 #%%
 for SEL_CEL in cell_lines:
     Class_Res = np.zeros([1,5])
-    DF = pd.read_csv("NCI60_GI50_normalized_April.csv")
+    DF = pd.read_csv("/nfs/home/jaclyns/REFINED/data/NCI60_GI50_normalized_small.csv")
     FilteredDF = DF.loc[DF.CELL==SEL_CEL]											# Pulling out the selected cell line responses
     FilteredDF = FilteredDF.drop_duplicates(['NSC'])                                # Dropping out the duplicates
     
-    Feat_DF = pd.read_csv("normalized_padel_feats_NCI60_672.csv")
+    Feat_DF = pd.read_csv("/nfs/home/jaclyns/REFINED/data/normalized_padel_feats_NCI60_672_small.csv")
     Cell_Features = Feat_DF[Feat_DF.NSC.isin(FilteredDF.NSC)]
     TargetDF = FilteredDF[FilteredDF.NSC.isin(Cell_Features.NSC)]
     
@@ -65,7 +66,7 @@ for SEL_CEL in cell_lines:
     
     Threshold = 4.25
     # Convert the drug responses into "Resistive" and "Sensitive" classes given the provided threshold
-	Y_Train_Class = Reg_to_Class(Y_Train,Threshold);  
+    Y_Train_Class = Reg_to_Class(Y_Train,Threshold);  
     Y_Validation_Class = Reg_to_Class(Y_Validation,Threshold);
     Y_Test_Class = Reg_to_Class(Y_Test,Threshold);   
     target_names = ['Resistive', 'Sensitive']
@@ -79,9 +80,11 @@ for SEL_CEL in cell_lines:
     ##   REFINED  ##
     ################
     from Toolbox import REFINED_Im_Gen
-    with open('theMapping_REFINED.pickle','rb') as file:
+    with open('/nfs/home/jaclyns/REFINED/Mapping_REFINED.pickle','rb') as file:
         gene_names,coords,map_in_int = pickle.load(file)
-
+    
+    nn = math.ceil(np.sqrt(X_Train.shape[1]))
+    print("this is nn "+str(nn))
     X_Train_REFINED = REFINED_Im_Gen(X_Train,nn, map_in_int, gene_names,coords)
     X_Val_REFINED = REFINED_Im_Gen(X_Validation,nn, map_in_int, gene_names,coords)
     X_Test_REFINED = REFINED_Im_Gen(X_Test,nn, map_in_int, gene_names,coords)
@@ -102,87 +105,94 @@ for SEL_CEL in cell_lines:
     Y_Validation_Encoded = onehot_encoder.fit_transform(Y_Validation_Class)
     Y_Test_Encoded = onehot_encoder.fit_transform(Y_Test_Class)
     
-	# Train CNN
+    # Train CNN
    
-	sz = X_Train_REFINED.shape
-	Width = int(math.sqrt(sz[1]))
-	Height = int(math.sqrt(sz[1]))
-	CNN_Train = X_Train_REFINED.reshape(-1,Width,Height,1)
-	CNN_Val = X_Val_REFINED.reshape(-1,Width,Height,1)
-	CNN_Test = X_Test_REFINED.reshape(-1,Width,Height,1)
+    sz = X_Train_REFINED.shape
+    Width = int(math.sqrt(sz[1]))
+    Height = int(math.sqrt(sz[1]))
+    print(X_Train_REFINED)
+    print(sz)
+    CNN_Train = X_Train_REFINED.reshape(-1,Width,Height,1)
+    print(CNN_Train.shape)
+    CNN_Val = X_Val_REFINED.reshape(-1,Width,Height,1)
+    CNN_Test = X_Test_REFINED.reshape(-1,Width,Height,1)
 
 		
 	
-	def CNN_model(Width,Height):
-		nb_filters = 16
-		nb_conv = 7
+    def CNN_model(Width,Height):
+      nb_filters = 16
+      nb_conv = 7
 		
-		model = models.Sequential()
-		# Convolutional layers
-		model.add(layers.Conv2D(nb_filters*1, (nb_conv, nb_conv),padding='valid',strides=1,dilation_rate=1,input_shape=(Width, Height,1)))
-		model.add(layers.BatchNormalization())
-		model.add(layers.Activation('relu'))
-		model.add(layers.Dropout(1-0.7))
-		model.add(layers.Conv2D(nb_filters*2, (nb_conv, nb_conv),padding='valid',strides=1,dilation_rate=1))
-		#model.add(Conv2D(1, (nb_conv, nb_conv),border_mode='valid',strides=(2,2)))
-		model.add(layers.BatchNormalization())
-		model.add(layers.Activation('relu'))
+      model = models.Sequential()
+      # Convolutional layers
+      model.add(layers.Conv2D(nb_filters*1, (nb_conv, nb_conv),padding='valid',strides=1,dilation_rate=1,input_shape=(Width, Height,1)))
+      model.add(layers.BatchNormalization())
+      model.add(layers.Activation('relu'))
+      model.add(layers.Dropout(1-0.7))
+      model.add(layers.Conv2D(nb_filters*2, (nb_conv, nb_conv),padding='valid',strides=1,dilation_rate=1))
+      #model.add(Conv2D(1, (nb_conv, nb_conv),border_mode='valid',strides=(2,2)))
+      model.add(layers.BatchNormalization())
+      model.add(layers.Activation('relu'))
 		
-		model.add(layers.Conv2D(nb_filters*4, (nb_conv -4, nb_conv -4),padding='valid',strides=1,dilation_rate=1))
-		model.add(layers.BatchNormalization())
-		model.add(layers.Activation('relu'))
+      model.add(layers.Conv2D(nb_filters*4, (nb_conv -4, nb_conv -4),padding='valid',strides=1,dilation_rate=1))
+      model.add(layers.BatchNormalization())
+      model.add(layers.Activation('relu'))
 								
-		model.add(layers.Flatten())
-		# Dense layers
-		model.add(layers.Dense(256))
-		model.add(layers.BatchNormalization())
-		model.add(layers.Activation('relu'))
-		model.add(layers.Dropout(1-0.7))
+      model.add(layers.Flatten())
+      # Dense layers
+      model.add(layers.Dense(256))
+      model.add(layers.BatchNormalization())
+      model.add(layers.Activation('relu'))
+      model.add(layers.Dropout(1-0.7))
 		
-		model.add(layers.Dense(64))
-		model.add(layers.BatchNormalization())
-		model.add(layers.Activation('relu'))
-		model.add(layers.Dropout(1-0.7))
+      model.add(layers.Dense(64))
+      model.add(layers.BatchNormalization())
+      model.add(layers.Activation('relu'))
+      model.add(layers.Dropout(1-0.7))
 	
-		model.add(layers.Dense(2))
-		model.add(layers.Activation('softmax'))
-
+      # ValueError: A target array with shape (5, 1) was passed for an output of shape (None, 26) while using as loss `binary_crossentropy`. This loss expects targets to have the same shape as the output.
+      model.add(layers.Dense(2))
+      #model.add(layers.Dense(1))
+      model.add(layers.Activation('softmax'))
 		
-		initial_learning_rate = 0.0001
-		lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
+      initial_learning_rate = 0.0001
+      lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
 			initial_learning_rate,
 			decay_steps=100000,
 			decay_rate=0.96,
 			staircase=True)
 
 		
-		model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=lr_schedule),
+      model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=lr_schedule),
 					  loss='binary_crossentropy',
 					  metrics=['accuracy'])
 
-		return model
-	# Training the CNN Model
-	model = CNN_model(Width,Height)
-	ES = EarlyStopping(monitor='val_loss', mode='min', verbose=0, patience=30)
-	CNN_History = model.fit(CNN_Train, Y_Train_Encoded, batch_size= 128, epochs = 100, verbose=0, validation_data=(CNN_Val, Y_Validation_Encoded), callbacks = [ES])
-	Y_Val_Pred_CNN = model.predict(CNN_Val, batch_size= 128, verbose=0)
-	Y_Pred_CNN = model.predict(CNN_Test, batch_size= 128, verbose=0)
+      return model
+    
+    # Training the CNN Model
+    model = CNN_model(Width,Height)
+    ES = EarlyStopping(monitor='val_loss', mode='min', verbose=0, patience=30)
+    print(Width)
+    print(Height)
+    print(CNN_Train)
+    CNN_History = model.fit(CNN_Train, Y_Train_Encoded, batch_size= 128, epochs = 100, verbose=0, validation_data=(CNN_Val, Y_Validation_Encoded), callbacks = [ES])
+    Y_Val_Pred_CNN = model.predict(CNN_Val, batch_size= 128, verbose=0)
+    Y_Pred_CNN = model.predict(CNN_Test, batch_size= 128, verbose=0)
 	
-	Y_Pred_CNN = floattoint(Y_Pred_CNN)
+    Y_Pred_CNN = floattoint(Y_Pred_CNN)
 
-	CNN_ACC = accuracy_score(Y_Test_Encoded, Y_Pred_CNN)
-	CNN_Precision , CNN_Recall, CNN_F1_Score, support = precision_recall_fscore_support(Y_Test_Encoded, Y_Pred_CNN, average='weighted')
-	CNN_AUC = roc_auc_score(Y_Test_Encoded, Y_Pred_CNN)
+    CNN_ACC = accuracy_score(Y_Test_Encoded, Y_Pred_CNN)
+    CNN_Precision , CNN_Recall, CNN_F1_Score, support = precision_recall_fscore_support(Y_Test_Encoded, Y_Pred_CNN, average='weighted')
+    CNN_AUC = roc_auc_score(Y_Test_Encoded, Y_Pred_CNN)
 
-
-	print(CNN_ACC, " CNN ACC of " + SEL_CEL)
-	print(CNN_Precision, " CNN Precision of "  + SEL_CEL)
-	print(CNN_Recall," CNN Recall of "  + SEL_CEL)
-	print(CNN_F1_Score," CNN F1 score of "  + SEL_CEL)
-	print(CNN_AUC," CNN AUC of "  + SEL_CEL)
+    print(CNN_ACC, " CNN ACC of " + SEL_CEL)
+    print(CNN_Precision, " CNN Precision of "  + SEL_CEL)
+    print(CNN_Recall," CNN Recall of "  + SEL_CEL)
+    print(CNN_F1_Score," CNN F1 score of "  + SEL_CEL)
+    print(CNN_AUC," CNN AUC of "  + SEL_CEL)
 	
-	Class_Res[0,:] = np.array([CNN_ACC, CNN_Precision, CNN_Recall, CNN_F1_Score, CNN_AUC])
-	tf.keras.backend.clear_session()
+    Class_Res[0,:] = np.array([CNN_ACC, CNN_Precision, CNN_Recall, CNN_F1_Score, CNN_AUC])
+    tf.keras.backend.clear_session()
 
     PD_Class_Res = pd.DataFrame(data=Class_Res, columns = ['ACC','Precision','Recall','F1 Score','AUC'], index = ['CNN REFINED'])
     Results_Dic[SEL_CEL] = PD_Class_Res
